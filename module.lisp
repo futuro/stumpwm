@@ -18,7 +18,7 @@
 
 ;; Commentary:
 ;;
-;; Use `set-contrib-dir' to set the location stumpwm searches for modules.
+;; Use `add-contrib-dir' to add the location stumpwm searches for modules.
 
 ;; Code:
 
@@ -26,8 +26,8 @@
 
 (export '(load-module
           list-modules
-	  *contrib-dir*
-	  set-contrib-dir
+	  *contrib-dirs*
+	  add-contrib-dir
           find-module))
 
 (defun module-string-as-directory (dir)
@@ -35,15 +35,17 @@
     (setf dir (concat dir "/")))
   (pathname dir))
 
-(defvar *contrib-dir*
+(defvar *contrib-dirs*
+  (list
   #.(asdf:system-relative-pathname (asdf:find-system :stumpwm)
                                    (make-pathname :directory
-                                                  '(:relative "contrib")))
+                                                  '(:relative "contrib"))))
   "The location of the contrib modules on your system.")
 
-(defcommand set-contrib-dir (dir) ((:string "Directory: "))
+(defcommand add-contrib-dir (dir) ((:string "Directory: "))
     "Sets the location of the contrib modules"
-  (setf *contrib-dir* (module-string-as-directory dir)))
+    (let ((module-string (module-string-as-directory dir)))
+      (push module-string *contrib-dirs*)))
 
 (define-stumpwm-type :module (input prompt)
   (or (argument-pop-rest input)
@@ -51,15 +53,28 @@
 
 (defun list-modules ()
   "Return a list of the available modules."
-  (mapcar 'pathname-name
-          (directory (make-pathname :defaults *contrib-dir*
-				    :name :wild
-				    :type "lisp"))))
+  (let ((mod-list) '())
+    (dolist (i *contrib-dirs*)
+      (dolist (element
+               (mapcar 'pathname-name
+                       (directory (make-pathname :defaults i
+                                                 :name :wild
+                                                 :type "lisp"))))
+      (push element mod-list)))
+    (remove-duplicates mod-list :test #'equal)))
 
 (defun find-module (name)
-  (probe-file (make-pathname :defaults *contrib-dir*
-                             :name name
-                             :type "lisp")))
+  "Find module from list avaliable modules FIXME: test"
+  (labels
+   ((module-p (dir-list name)
+              (cond
+               ((null dir-list) nil)
+               ((probe-file (make-pathname :defaults (car dir-list) :name name :type "lisp"))
+                (make-pathname :defaults (pathname (princ-to-string (car dir-list)))
+			       :name name
+			       :type "lisp"))
+               (t (module-p (cdr dir-list) name)))))
+   (module-p (reverse *contrib-dirs*) name)))
 
 (defcommand load-module (name) ((:module "Load Module: "))
   "Loads the contributed module with the given NAME."
@@ -69,6 +84,5 @@
     (let ((module (find-module name)))
       (when module
           (load module)))))
-
 
 ;; End of file
